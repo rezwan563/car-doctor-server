@@ -1,5 +1,6 @@
 const express = require('express');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const jwt = require('jsonwebtoken')
 const cors = require('cors');
 require('dotenv').config()
 const app = express()
@@ -21,6 +22,21 @@ const client = new MongoClient(uri, {
   }
 });
 
+const verifyJWT = (req, res, next) =>{
+  const authorization = req.headers.authorization
+  if(!authorization){
+    return res.status(401).send({error: true, message: "Unauthorized Access"})
+  }
+  const token = authorization.split(" ")[1]
+  jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) =>{
+    if(err){
+      return res.status(401).send({error: true, message: "Unauthorized Access"})
+    }
+    req.decoded = decoded;
+    next()
+  })
+}
+
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
@@ -29,6 +45,16 @@ async function run() {
     const serviceCollecton = client.db("carDoctor").collection("services");
     const bookingCollection = client.db("carDoctor").collection("bookings")
 
+    //jwt
+    app.post('/jwt', (req, res) =>{
+      const user = req.body;
+      console.log(user)
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN, {expiresIn: '1h'})
+      console.log(token)
+      res.send({token})
+    })
+
+    // services routes
     app.get('/services', async(req, res) =>{
         const cursor = serviceCollecton.find()
         const result = await cursor.toArray()
@@ -53,8 +79,14 @@ async function run() {
       res.send(result)
     })
 
-    app.get('/bookings', async(req, res) =>{
+    app.get('/bookings', verifyJWT, async(req, res) =>{
+      const decoded = req.decoded;
+      console.log("Come back after verify", decoded)
       let query = {}
+
+      if(req.decoded.email !== req.query.email){
+        return res.status(403).send({error: 1, message: "Forbidden Access"})
+      }
       if(req.query?.email){
         query = {email: req.query.email}
       }
